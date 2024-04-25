@@ -1,0 +1,54 @@
+name: Dev Workflow
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Build images with Docker Compose
+        run: |
+          docker-compose build
+          echo "Build completed"
+
+  images:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait for build job to finish
+        uses: actions/github-script@0.10.0
+        with:
+          script: |
+            console.log("Waiting for build job to finish...");
+            let buildStatus = "queued";
+            while (buildStatus !== "completed") {
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              const { data: workflowRuns } = await github.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                branch: context.payload.repository.default_branch
+              });
+              const latestRun = workflowRuns.workflow_runs.find(run => run.name === "Dev Workflow" && run.head_branch === "dev");
+              buildStatus = latestRun.status;
+            }
+            console.log("Build job completed!");
+
+      - name: Authenticate with Artifact Registry
+        run: |
+          # Command to authenticate with Artifact Registry using secret key
+          gcloud auth configure-docker
+
+      - name: Tag and push images to dev repository in Artifact Registry
+        run: |
+          # Command to tag and push images to dev repository in Artifact Registry
+          docker tag frontend:latest us-central1-docker.pkg.dev/H24-4D4-12/dev/frontend:${{ github.sha }}
+          docker push us-central1-docker.pkg.dev/H24-4D4-12/dev/frontend:${{ github.sha }}
+          echo "Push completed"
